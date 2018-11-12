@@ -1,3 +1,10 @@
+# HCTF 2018 - [Misc] Guess My Key
+
+比赛过程中使用的模型是预先训练好的，本仓库包含了训练所需代码以及 exp。writeup 之后再更新。
+
+The model used during the competition was trained in advance. This repo contains all the codes needed for training, and also my exp. I am going to update my writeup here in a few days.
+
+
 # Adversarial Neural Cryptography in [TensorFlow](https://github.com/tensorflow/tensorflow)
 
 A Tensorflow Flow implementation of Google Brain's recent paper ([Learning to Protect Communications with Adversarial Neural Cryptography.](https://arxiv.org/pdf/1610.06918v1.pdf))
@@ -9,7 +16,6 @@ Two Neural Networks, Alice and Bob learn to communicate secretly with each other
 ## Pre-requisites
 
 * TensorFlow 
-* Seaborn (for plots)
 * Numpy
 
 ## Usage 
@@ -19,7 +25,7 @@ First, ensure you have the dependencies installed.
 
 To train the neural networks, run the `main.py` script.
 
-    $ python main.py --msg-len 32 --epochs 50
+    $ python main.py --msg-len 96 --epochs 60
     
     
 ## Attribution / Thanks

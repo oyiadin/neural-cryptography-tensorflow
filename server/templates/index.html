@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>Guess My Key</title>
+  <meta charset="utf-8" />
+</head>
+
+<body>
+  <a href="enc?msg=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1&key=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1">/enc?msg=xxx&key=xxx</a>
+  <br />
+  <p>you can encrypt any <code>msg</code> with any <code>key</code> here</p>
+  <p>if no <code>key</code> was provided then <code>key</code> would be the <code>Real_Key</code> (you have to figure out what it is)</p> 
+
+  <hr />
+  <p>P.S.</p>
+  <!-- 1. assert len(msg) <= 96 and len(key) <= 96 and len(real_key) == 96 -->
+  <!-- I'm sorry that I've made a mistake, the previous line should be: -->
+  <p>1. assert len(msg) == 96 and len(key) == 96 and len(real_key) == 96</p>
+  <p>2. flag == "hctf{" + hex(int(Real_Key, base=2))[2:].unhexlify() + "}"</p>
+</body>
+</html>

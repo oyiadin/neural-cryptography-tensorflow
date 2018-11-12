@@ -1,16 +1,11 @@
+import os
+import datetime
 import tensorflow as tf
 import numpy as np
 
-import matplotlib
-# OSX fix
-matplotlib.use('TkAgg')
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-from layers import conv_layer
-from config import *
-from utils import init_weights, gen_data
+from .layers import conv_layer
+from .config import *
+from .utils import init_weights, gen_data
 
 
 class CryptoNet(object):
@@ -35,6 +30,7 @@ class CryptoNet(object):
         self.learning_rate = learning_rate
 
         self.build_model()
+        self.restore_model()
 
     def build_model(self):
         # Weights for fully connected layers
@@ -49,59 +45,87 @@ class CryptoNet(object):
 
         # Alice's network
         # FC layer -> Conv Layer (4 1-D convolutions)
-        self.alice_input = tf.concat([self.msg, self.key],1)
+        self.alice_input = tf.concat([self.msg, self.key], 1)
         self.alice_hidden = tf.nn.sigmoid(tf.matmul(self.alice_input, self.w_alice))
         self.alice_hidden = tf.expand_dims(self.alice_hidden, 2)
         self.alice_output = tf.squeeze(conv_layer(self.alice_hidden, "alice"))
 
         # Bob's network
         # FC layer -> Conv Layer (4 1-D convolutions)
-        self.bob_input = tf.concat([self.alice_output, self.key],1)
+        self.bob_input = tf.concat(
+            [tf.reshape(self.alice_output, (-1, self.msg_len)), self.key], 1,
+            name='bob_input')
         self.bob_hidden = tf.nn.sigmoid(tf.matmul(self.bob_input, self.w_bob))
         self.bob_hidden = tf.expand_dims(self.bob_hidden, 2)
         self.bob_output = tf.squeeze(conv_layer(self.bob_hidden, "bob"))
 
         # Eve's network
         # FC layer -> FC layer -> Conv Layer (4 1-D convolutions)
-        self.eve_input = self.alice_output
+        self.eve_input = tf.reshape(self.alice_output, (-1, self.msg_len))
         self.eve_hidden1 = tf.nn.sigmoid(tf.matmul(self.eve_input, self.w_eve1))
         self.eve_hidden2 = tf.nn.sigmoid(tf.matmul(self.eve_hidden1, self.w_eve2))
         self.eve_hidden2 = tf.expand_dims(self.eve_hidden2, 2)
         self.eve_output = tf.squeeze(conv_layer(self.eve_hidden2, "eve"))
 
-    def train(self):
         # Loss Functions
-        self.decrypt_err_eve = tf.reduce_mean(tf.abs(self.msg - self.eve_output))
+        self.decrypt_err_eve = (0.5 - tf.reduce_mean(tf.abs(self.msg - self.eve_output))) ** 2.
         self.decrypt_err_bob = tf.reduce_mean(tf.abs(self.msg - self.bob_output))
-        self.loss_bob = self.decrypt_err_bob + (1. - self.decrypt_err_eve) ** 2.
+        self.loss_bob = self.decrypt_err_bob + self.decrypt_err_eve
+        # I managed to modify the loss functions to improve the performance
+
+        # logging
+        self.writer = tf.summary.FileWriter(
+            "logs", filename_suffix=str(datetime.datetime.now()))
+        tf.summary.scalar("eve_err", self.decrypt_err_eve)
+        tf.summary.scalar("bob_err", self.decrypt_err_bob)
+        self.merged_summary = tf.summary.merge_all()
+        self.writer.add_graph(self.sess.graph)
 
         # Get training variables corresponding to each network
         self.t_vars = tf.trainable_variables()
         self.alice_or_bob_vars = [var for var in self.t_vars if 'alice_' in var.name or 'bob_' in var.name]
-        self.eve_vars = [var for var in self.t_vars if 'eve_' in var.name]
+        self.alice_or_eve_vars = [var for var in self.t_vars if 'alice_' in var.name or 'eve_' in var.name]
 
         # Build the optimizers
         self.bob_optimizer = tf.train.AdamOptimizer(self.learning_rate).minimize(
             self.loss_bob, var_list=self.alice_or_bob_vars)
         self.eve_optimizer = tf.train.AdamOptimizer(self.learning_rate).minimize(
-            self.decrypt_err_eve, var_list=self.eve_vars)
+            self.decrypt_err_eve, var_list=self.alice_or_eve_vars)
 
-        self.bob_errors, self.eve_errors = [], []
+    def restore_model(self):
+        # restore or initialize
+        if not os.path.isfile(os.path.join('saved-model', 'checkpoint')):
+            tf.global_variables_initializer().run()
+            print('variables initialized')
+        else:
+            saver = tf.train.Saver()
+            saver.restore(self.sess, os.path.join('saved-model', 'alice_bob'))
+            print('model restored from saved-model/alice_bob')
 
+    def train(self):
         # Begin Training
-        tf.global_variables_initializer().run()
         for i in range(self.epochs):
-            iterations = 2000
+            iterations = 100
 
-            print 'Training Alice and Bob, Epoch:', i + 1
+            print('Training Alice and Bob, Epoch:', i + 1)
             bob_loss, _ = self._train('bob', iterations)
-            self.bob_errors.append(bob_loss)
+            print('Training Eve, Epoch:', i + 1)
+            eve_loss, _ = self._train('eve', iterations)
 
-            print 'Training Eve, Epoch:', i + 1
-            _, eve_loss = self._train('eve', iterations)
-            self.eve_errors.append(eve_loss)
+            P, K = gen_data(
+                n=self.batch_size, msg_len=self.msg_len, key_len=self.key_len)
+            self.writer.add_summary(
+                self.sess.run(self.merged_summary,
+                              feed_dict={self.msg: P, self.key: K}),
+                global_step=i)
+            self.writer.flush()
 
-        self.plot_errors()
+            # save session
+            if not os.path.isdir('saved-model'):
+                os.makedirs('saved-model')
+            saver = tf.train.Saver()
+            saver.save(self.sess, os.path.join('saved-model', 'alice_bob'))
+            print('model saved to saved-model/alice_bob')
 
     def _train(self, network, iterations):
         bob_decrypt_error, eve_decrypt_error = 1., 1.
@@ -115,26 +139,29 @@ class CryptoNet(object):
             msg_in_val, key_val = gen_data(n=bs, msg_len=self.msg_len, key_len=self.key_len)
 
             if network == 'bob':
-                _, decrypt_err = self.sess.run([self.bob_optimizer, self.decrypt_err_bob],
-                                               feed_dict={self.msg: msg_in_val, self.key: key_val})
+                _, decrypt_err = self.sess.run(
+                    [self.bob_optimizer, self.decrypt_err_bob],
+                    feed_dict={self.msg: msg_in_val, self.key: key_val})
                 bob_decrypt_error = min(bob_decrypt_error, decrypt_err)
 
             elif network == 'eve':
-                _, decrypt_err = self.sess.run([self.eve_optimizer, self.decrypt_err_eve],
-                                               feed_dict={self.msg: msg_in_val, self.key: key_val})
+                _, decrypt_err = self.sess.run(
+                    [self.eve_optimizer, self.decrypt_err_eve],
+                    feed_dict={self.msg: msg_in_val, self.key: key_val})
                 eve_decrypt_error = min(eve_decrypt_error, decrypt_err)
 
         return bob_decrypt_error, eve_decrypt_error
 
-    def plot_errors(self):
-        """
-        Plot Lowest Decryption Errors achieved by Bob and Eve per epoch
-        """
-        sns.set_style("darkgrid")
-        plt.plot(self.bob_errors)
-        plt.plot(self.eve_errors)
-        plt.legend(['bob', 'eve'])
-        plt.xlabel('Epoch')
-        plt.ylabel('Lowest Decryption error achieved')
-        plt.show()
+    def test_interactive(self):
+        def convert(x):
+            return np.array([[2*int(i)-1 for i in x]])
 
+        while True:
+            P = convert(input('MSG> ')[:self.msg_len])
+            K = convert(input('KEY> ')[:self.key_len])
+
+            enc, dec = self.sess.run(
+                [self.alice_output, self.bob_output],
+                feed_dict={self.msg: P, self.key: K})
+            print('ENC>', ''.join(np.where(enc>0, '1', '0')))
+            print('DEC>', ''.join(np.where(dec>0, '1', '0')))

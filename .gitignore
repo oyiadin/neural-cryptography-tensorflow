@@ -7,3 +7,4 @@ env/
 # Byte-compiled files
 *.pyc
 
+.DS_Store
